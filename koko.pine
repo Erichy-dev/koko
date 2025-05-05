@@ -1,0 +1,107 @@
+//erichnyaga1
+//@version=6
+strategy("koko", overlay=true, default_qty_type = strategy.percent_of_equity, process_orders_on_close = true, default_qty_value = 95, initial_capital = 1000, commission_value = 0.04)
+
+kc_length_inner = input(8, title = "Inner KC Length", group = "KC Settings")
+kc_mult_inner = input(1.0, title = "Inner KC Multiplier", group = "KC Settings")
+[middle_kc, upper_kc_inner, lower_kc_inner] = ta.kc(close, kc_length_inner, kc_mult_inner)
+
+kc_length_outer = input(13, title = "Outer KC Length", group = "KC Settings")
+kc_mult_outer = input(2, title = "Outer KC Multiplier", group = "KC Settings")
+
+// Backtest Range
+backtestSettings = "Backtest Range"
+start = input.time(timestamp('2021-01-01T00:00:00'), title='Start', group = backtestSettings)
+finish = input.time(timestamp('2030-12-31T00:00:00'), title='End', group = backtestSettings)
+timeRange = time >= start and time <= finish
+
+[middle_kc_outer, upper_kc_outer, lower_kc_outer] = ta.kc(close, kc_length_outer, kc_mult_outer)
+
+plot(upper_kc_outer, color = color.red, title = "Outer KC Upper Band")
+plot(upper_kc_inner, color=color.yellow, title = "Inner KC Upper Band")
+plot(middle_kc, color=color.blue, title = "KC Middle Band")
+plot(lower_kc_inner, color=color.yellow, title = "Inner KC Lower Band")
+plot(lower_kc_outer, color = color.red, title = "Outer KC Lower Band")
+
+var stop_price = 0.0
+var profit_price = 0.0
+
+// Define stop loss and take profit percentages
+fixed_stop_loss_percent = input.float(3.0, title="Fixed Stop Loss %", group="Stop Loss & Take Profit", step=0.1)
+fixed_take_profit_percent = input.float(3.0, title="Fixed Take Profit %", group="Stop Loss & Take Profit", step=0.1)
+forced_stop_loss_percent = input.float(6.0, title="Forced Stop Loss %", group="Stop Loss & Take Profit", step=0.1)
+forced_take_profit_percent = input.float(6.0, title="Forced Take Profit %", group="Stop Loss & Take Profit", step=0.1)
+
+// Variables to control exit status
+var bool exit_executed_long = false
+var bool exit_executed_short = false
+
+// Allow only one active trade
+if (strategy.opentrades == 0 or strategy.position_size == 0)
+    longCondition = ta.crossover(close, lower_kc_inner) and close < middle_kc
+    if (longCondition and timeRange)
+        stop_price := lower_kc_outer
+        profit_price := upper_kc_inner
+
+        // Enter long position
+        strategy.entry("Long", strategy.long, comment = "Long Entry")
+        exit_executed_long := false  // Reset exit status
+
+    shortCondition = ta.crossunder(close, upper_kc_inner) and close > middle_kc
+    if (shortCondition and timeRange)
+        stop_price := upper_kc_outer
+        profit_price := lower_kc_inner
+
+        // Enter short position
+        strategy.entry("Short", strategy.short, comment = "Short Entry")
+        exit_executed_short := false  // Reset exit status
+
+// Fixed stop loss and take profit logic
+if (strategy.opentrades > 0)
+    if (strategy.position_size > 0 and not exit_executed_long)  // Long position
+        // Fixed stop loss
+        fixed_stop_loss_price = strategy.position_avg_price * (1 - fixed_stop_loss_percent / 100)
+        if (low <= fixed_stop_loss_price)
+            strategy.close("Long", comment = "Long Fixed Stop Loss")
+            exit_executed_long := true
+
+        // Fixed take profit
+        fixed_take_profit_price = strategy.position_avg_price * (1 + fixed_take_profit_percent / 100)
+        if (high >= fixed_take_profit_price)
+            strategy.close("Long", comment = "Long Fixed Take Profit")
+            exit_executed_long := true
+
+        // Forced stop loss
+        forced_stop_loss_price = strategy.position_avg_price * (1 - forced_stop_loss_percent / 100)
+        strategy.exit("Forced Long SL", from_entry="Long", stop=forced_stop_loss_price, comment = "Long - Forced Stop Loss")
+        
+        // Forced take profit
+        forced_take_profit_price = strategy.position_avg_price * (1 + forced_take_profit_percent / 100)
+        strategy.exit("Forced Long TP", from_entry="Long", limit=forced_take_profit_price, comment = "Long - Forced Take Profit")
+
+    if (strategy.position_size < 0 and not exit_executed_short)  // Short position
+        // Fixed stop loss
+        fixed_stop_loss_price = strategy.position_avg_price * (1 + fixed_stop_loss_percent / 100)
+        if (high >= fixed_stop_loss_price)
+            strategy.close("Short", comment = "Short Fixed Stop Loss")
+            exit_executed_short := true
+
+        // Fixed take profit
+        fixed_take_profit_price = strategy.position_avg_price * (1 - fixed_take_profit_percent / 100)
+        if (low <= fixed_take_profit_price)
+            strategy.close("Short", comment = "Short Fixed Take Profit")
+            exit_executed_short := true
+
+        // Forced stop loss
+        forced_stop_loss_price = strategy.position_avg_price * (1 + forced_stop_loss_percent / 100)
+        strategy.exit("Forced Short SL", from_entry="Short", stop=forced_stop_loss_price, comment = "Short - Forced Stop Loss")
+        
+        // Forced take profit
+        forced_take_profit_price = strategy.position_avg_price * (1 - forced_take_profit_percent / 100)
+        strategy.exit("Forced Short TP", from_entry="Short", limit=forced_take_profit_price, comment = "Short - Forced Take Profit")
+
+// Trailing stop logic
+if (not exit_executed_long)
+    strategy.exit("Long Exit", from_entry="Long", trail_price=middle_kc, trail_offset=4, comment = "Long Exit")
+if (not exit_executed_short)
+    strategy.exit("Short Exit", from_entry="Short", trail_price=middle_kc, trail_offset=4, comment = "Short Exit")
