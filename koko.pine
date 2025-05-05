@@ -2,7 +2,7 @@
 //@version=6
 strategy("koko", overlay=true, default_qty_type = strategy.percent_of_equity, process_orders_on_close = true, default_qty_value = 95, initial_capital = 1000, commission_value = 0.04)
 
-kc_length_inner = input(8, title = "Inner KC Length", group = "KC Settings")
+kc_length_inner = input(10, title = "Inner KC Length", group = "KC Settings")
 kc_mult_inner = input(1.0, title = "Inner KC Multiplier", group = "KC Settings")
 [middle_kc, upper_kc_inner, lower_kc_inner] = ta.kc(close, kc_length_inner, kc_mult_inner)
 
